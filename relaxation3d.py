@@ -211,15 +211,28 @@ def relax_3d(f, potential_surfaces, charged_surfaces, iters=2000, e0=1.0, h=1.0)
 
     return f
 
-def graph_slices(p3, potential_surfaces=None, charged_surfaces=None, slices=None, levels=None, cmap='viridis'):
+
+def graph_slices(p3, potential_surfaces=None, charged_surfaces=None, slices=None, levels=None, cmap='viridis', axis=0):
     """
-    Plot multiple z-slices of 3D potential as 2D contours.
-    p3: (nz,ny,nx)
-    slices: list of z indices (if None, chooses 3 slices: quarter, middle, 3/4)
+    Plot multiple slices of 3D potential as 2D contours along a chosen axis.
+
+    Parameters
+    - p3: (nz, ny, nx) ndarray
+    - axis: which axis to slice along: 0 -> z (plots y vs x),
+             1 -> y (plots z vs x), 2 -> x (plots z vs y)
+    - slices: list of indices along the chosen axis. If None, chooses three default slices
+              spaced at quarter, middle, and three-quarter positions along that axis.
     """
     nz, ny, nx = p3.shape
     if slices is None:
-        slices = [nz//4, nz//2, 3*nz//4]
+        if axis == 0:
+            slices = [nz // 4, nz // 2, 3 * nz // 4]
+        elif axis == 1:
+            slices = [ny // 4, ny // 2, 3 * ny // 4]
+        elif axis == 2:
+            slices = [nx // 4, nx // 2, 3 * nx // 4]
+        else:
+            raise ValueError('axis must be 0, 1, or 2')
     n = len(slices)
     cols = min(3, n)
     rows = (n + cols - 1)//cols
@@ -228,10 +241,31 @@ def graph_slices(p3, potential_surfaces=None, charged_surfaces=None, slices=None
     fig, axs = plt.subplots(rows, cols, figsize=(4*cols, 4*rows), squeeze=False)
     for i, iz in enumerate(slices):
         ax = axs[i//cols, i%cols]
-        cs = ax.contourf(p3[iz], levels=levels, cmap=cmap)
-        ax.set_title(f'z = {iz}')
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
+
+        # select 2D slice and mapping depending on axis
+        if axis == 0:
+            data2d = p3[iz]                # shape (ny, nx): x horiz, y vert
+            title_coord = f'z = {iz}'
+            map_x_idx = 2
+            map_y_idx = 1
+            xlabel, ylabel = 'x', 'y'
+        elif axis == 1:
+            data2d = p3[:, iz, :]          # shape (nz, nx): x horiz, z vert
+            title_coord = f'y = {iz}'
+            map_x_idx = 2
+            map_y_idx = 0
+            xlabel, ylabel = 'x', 'z'
+        else:
+            data2d = p3[:, :, iz]          # shape (nz, ny): y horiz, z vert
+            title_coord = f'x = {iz}'
+            map_x_idx = 1
+            map_y_idx = 0
+            xlabel, ylabel = 'y', 'z'
+
+        cs = ax.contourf(data2d, levels=levels, cmap=cmap)
+        ax.set_title(title_coord)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
         fig.colorbar(cs, ax=ax)
 
         # overlay potential_surfaces and charged_surfaces intersections
@@ -239,30 +273,22 @@ def graph_slices(p3, potential_surfaces=None, charged_surfaces=None, slices=None
             for (coords, _), V in potential_surfaces:
                 if coords.size == 0:
                     continue
-
-                mask = coords[:,0] == iz
-
+                mask = coords[:, axis] == iz
                 if not np.any(mask):
                     continue
-
-                ys = coords[mask, 1]
-                xs = coords[mask, 2]
-
+                xs = coords[mask, map_x_idx]
+                ys = coords[mask, map_y_idx]
                 ax.scatter(xs, ys, c='yellow', s=6, edgecolors='k', linewidths=0.2, alpha=0.8)
 
         if charged_surfaces:
             for (coords, normals), sigma in charged_surfaces:
                 if coords.size == 0:
                     continue
-
-                mask = coords[:,0] == iz
-
+                mask = coords[:, axis] == iz
                 if not np.any(mask):
                     continue
-
-                ys = coords[mask, 1]
-                xs = coords[mask, 2]
-
+                xs = coords[mask, map_x_idx]
+                ys = coords[mask, map_y_idx]
                 ax.scatter(xs, ys, c='red', s=8, alpha=0.9)
 
     # hide any empty subplots
@@ -295,7 +321,7 @@ def vector_field_plot(vector_field_x, vector_field_y, title, scale_label, subsam
 
 if __name__ == "__main__":
     # small test grid
-    nz, ny, nx = 48, 96, 96
+    nz, ny, nx = 96, 96, 96
     p3 = np.zeros((nz, ny, nx))
     e0 = 1.0
 
@@ -305,10 +331,8 @@ if __name__ == "__main__":
     z0, z1 = cz-half, cz+half
     y0, y1 = cy-half, cy+half
     x0, x1 = cx-half, cx+half
-    Z, Y, X = np.mgrid[z0:z1, y0:y1, x0:x1]
-    filled_coords = np.column_stack((Z.ravel(), Y.ravel(), X.ravel()))
-    filled_normals = np.zeros((filled_coords.shape[0], 3), float)
-    potential_surfaces = [((filled_coords, filled_normals), 10.0)]
+    box_coords, box_normals = make_box3d(p3.shape, (z0, z1, y0, y1, x0, x1))
+    potential_surfaces = [((box_coords, box_normals), 10.0)]
 
     # outer charged box boundary
     outer = make_box3d(p3.shape, (6, nz-6, 6, ny-6, 6, nx-6))
@@ -323,7 +347,10 @@ if __name__ == "__main__":
     # graph potential slices (contours) with surfaces overlaid
     levels_p = np.linspace(np.min(relaxed), np.max(relaxed), 21)
     graph_slices(relaxed, potential_surfaces, charged_surfaces,
-                 slices=[nz//4, nz//2, 3*nz//4], levels=levels_p, cmap='viridis')
+                 slices=[nz//4, nz//2, 3*nz//4], levels=levels_p, cmap='viridis',axis=0)
+
+    graph_slices(relaxed, potential_surfaces, charged_surfaces,
+                 slices=[ny//4, ny//2, 3*ny//4], levels=levels_p, cmap='viridis',axis=1)
 
     # graph Laplacian slices (seismic) symmetrically about zero
     vmax = np.max(np.abs(lap))
@@ -347,16 +374,17 @@ if __name__ == "__main__":
 
     print('Ex/Ey slice shapes:', ex_slice.shape, ey_slice.shape)
     vector_field_plot(ex_slice, ey_slice,
-                      title='Electric Field Vectors (x-y plane), z = H/2',
+                      title='Electric Field Vectors (x-y plane), midplane',
                       scale_label='Electric Field Magnitude (V/m)',
                       subsample_step=4)
 
-    xmid = relaxed.shape[0] // 2
-    ex_slice = Ey[zmid]
-    ey_slice = Ez[zmid]
+    # select a mid x-slice (y-z plane) -> axis index 2
+    xmid = relaxed.shape[2] // 2
+    ex_slice = Ey[:, :, xmid]
+    ey_slice = Ez[:, :, xmid]
 
-    print('Ex/Ey slice shapes:', ex_slice.shape, ey_slice.shape)
+    print('Ey/Ez (y-z) slice shapes:', ex_slice.shape, ey_slice.shape)
     vector_field_plot(ex_slice, ey_slice,
-                      title='Electric Field Vectors (y-z plane), x = H/2',
+                      title='Electric Field Vectors (y-z plane), midplane',
                       scale_label='Electric Field Magnitude (V/m)',
                       subsample_step=4)
