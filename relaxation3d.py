@@ -272,6 +272,27 @@ def graph_slices(p3, potential_surfaces=None, charged_surfaces=None, slices=None
     plt.tight_layout()
     plt.show()
 
+def vector_field_plot(vector_field_x, vector_field_y, title, scale_label, subsample_step=5):
+    magnitude = np.sqrt(vector_field_x**2 + vector_field_y**2)
+
+    subsample_offset = subsample_step // 2
+    subsampled_magnitude = magnitude[subsample_offset::subsample_step, subsample_offset::subsample_step]
+
+    subsampled_magnitude[subsampled_magnitude == 0] = 1
+
+    subsampled_x = vector_field_x[subsample_offset::subsample_step, subsample_offset::subsample_step] / subsampled_magnitude
+    subsampled_y = vector_field_y[subsample_offset::subsample_step, subsample_offset::subsample_step] / subsampled_magnitude
+
+    X,Y = np.meshgrid(np.arange(subsampled_x.shape[1]),
+                    np.arange(subsampled_x.shape[0]))
+
+    plt.quiver(X, Y, subsampled_x, subsampled_y, subsampled_magnitude, cmap='inferno')
+    plt.colorbar(label=scale_label)
+    plt.title(title)
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.show()
+
 if __name__ == "__main__":
     # small test grid
     nz, ny, nx = 48, 96, 96
@@ -309,3 +330,33 @@ if __name__ == "__main__":
     levels_l = np.linspace(-vmax, vmax, 31) if vmax > 0 else None
     graph_slices(lap, potential_surfaces=None, charged_surfaces=None,
                  slices=[nz//4, nz//2, 3*nz//4], levels=levels_l, cmap='seismic')
+    
+    # find efield and charge density
+    # For array shape (nz, ny, nx), np.gradient(relaxed) returns (dV/dz, dV/dy, dV/dx)
+    dVz, dVy, dVx = np.gradient(relaxed, 1.0, 1.0, 1.0)
+
+    # Electric field E = -grad(V)
+    Ez = -dVz
+    Ey = -dVy
+    Ex = -dVx
+
+    # choose a z slice to visualize (middle)
+    zmid = relaxed.shape[0] // 2
+    ex_slice = Ex[zmid]
+    ey_slice = Ey[zmid]
+
+    print('Ex/Ey slice shapes:', ex_slice.shape, ey_slice.shape)
+    vector_field_plot(ex_slice, ey_slice,
+                      title='Electric Field Vectors (x-y plane), z = H/2',
+                      scale_label='Electric Field Magnitude (V/m)',
+                      subsample_step=4)
+
+    xmid = relaxed.shape[0] // 2
+    ex_slice = Ey[zmid]
+    ey_slice = Ez[zmid]
+
+    print('Ex/Ey slice shapes:', ex_slice.shape, ey_slice.shape)
+    vector_field_plot(ex_slice, ey_slice,
+                      title='Electric Field Vectors (y-z plane), x = H/2',
+                      scale_label='Electric Field Magnitude (V/m)',
+                      subsample_step=4)
