@@ -1,6 +1,8 @@
 # PH431 Group Project 1
 
-## Jackson Smith, Ben Johnson
+## Computational solutions to electrostatics boundary value problems
+
+### Jackson Smith, Ben Johnson
 
 Before beginning the lecture, please read and complete the [prep activity](prepactivity.md).
 
