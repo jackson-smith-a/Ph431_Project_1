@@ -21,6 +21,7 @@ def make_box3d(shape, bounds):
     if z1 <= z0 or y1 <= y0 or x1 <= x0:
         return np.empty((0,3), int), np.empty((0,3), float)
 
+    # Corners should ideally point diagonally instead of equally along each face normal
     normals_map = {}
 
     # z-faces
@@ -123,10 +124,9 @@ def interp3d(arr, zf, yf, xf):
 
     return arr[zi, yi, xi]
 
-# add: numerical Laplacian (6-point stencil)
 def compute_laplacian_3d(f, h=1.0):
     """
-    Compute the 3D discrete Laplacian using a 6-point stencil.
+    Compute the 3D discrete Laplacian using finite differences.
     Returns array same shape as f.
     """
     lap = np.zeros_like(f)
@@ -299,6 +299,14 @@ def graph_slices(p3, potential_surfaces=None, charged_surfaces=None, slices=None
     plt.show()
 
 def vector_field_plot(vector_field_x, vector_field_y, title, scale_label, subsample_step=5):
+    """Graph a quiver plot of a 2D vector field with color representing magnitude.
+    
+    Parameters:
+    - vector_field_x, vector_field_y: 2D ndarrays of same shape
+    - title: plot title
+    - scale_label: label for color scale
+    - subsample_step: step size for subsampling the field for clarity
+    """
     magnitude = np.sqrt(vector_field_x**2 + vector_field_y**2)
 
     subsample_offset = subsample_step // 2
@@ -319,72 +327,74 @@ def vector_field_plot(vector_field_x, vector_field_y, title, scale_label, subsam
     plt.ylabel('y')
     plt.show()
 
-if __name__ == "__main__":
-    # small test grid
-    nz, ny, nx = 96, 96, 96
-    p3 = np.zeros((nz, ny, nx))
-    e0 = 1.0
+# small test grid
+nz, ny, nx = 96, 96, 96
+p3 = np.zeros((nz, ny, nx))
+e0 = 1.0
 
-    # center solid cube at fixed potential
-    cz, cy, cx = nz//2, ny//2, nx//2
-    half = 8
-    z0, z1 = cz-half, cz+half
-    y0, y1 = cy-half, cy+half
-    x0, x1 = cx-half, cx+half
-    box_coords, box_normals = make_box3d(p3.shape, (z0, z1, y0, y1, x0, x1))
-    potential_surfaces = [((box_coords, box_normals), 10.0)]
+# center solid cube at fixed potential
+cz, cy, cx = nz//2, ny//2, nx//2
+half = 8
+z0, z1 = cz-half, cz+half
+y0, y1 = cy-half, cy+half
+x0, x1 = cx-half, cx+half
+box_coords, box_normals = make_box3d(p3.shape, (z0, z1, y0, y1, x0, x1))
+potential_surfaces = [((box_coords, box_normals), 10.0)]
 
-    # outer charged box boundary
-    outer = make_box3d(p3.shape, (6, nz-6, 6, ny-6, 6, nx-6))
-    charged_surfaces = [(outer, 1.0)]
+# outer charged box boundary
+outer = make_box3d(p3.shape, (6, nz-6, 6, ny-6, 6, nx-6))
+charged_surfaces = [(outer, 1.0)]
 
-    # relax
-    relaxed = relax_3d(p3, potential_surfaces, charged_surfaces, iters=800, e0=e0, h=1.0)
+# relax
+relaxed = relax_3d(p3, potential_surfaces, charged_surfaces, iters=800, e0=e0, h=1.0)
 
-    # compute Laplacian everywhere
-    lap = compute_laplacian_3d(relaxed, h=1.0)
 
-    # graph potential slices (contours) with surfaces overlaid
-    levels_p = np.linspace(np.min(relaxed), np.max(relaxed), 21)
-    graph_slices(relaxed, potential_surfaces, charged_surfaces,
-                 slices=[nz//4, nz//2, 3*nz//4], levels=levels_p, cmap='viridis',axis=0)
+# compute Laplacian everywhere
+lap = compute_laplacian_3d(relaxed, h=1.0)
 
-    graph_slices(relaxed, potential_surfaces, charged_surfaces,
-                 slices=[ny//4, ny//2, 3*ny//4], levels=levels_p, cmap='viridis',axis=1)
+charge_density = -e0 * lap
 
-    # graph Laplacian slices (seismic) symmetrically about zero
-    vmax = np.max(np.abs(lap))
-    levels_l = np.linspace(-vmax, vmax, 31) if vmax > 0 else None
-    graph_slices(lap, potential_surfaces=None, charged_surfaces=None,
-                 slices=[nz//4, nz//2, 3*nz//4], levels=levels_l, cmap='seismic')
-    
-    # find efield and charge density
-    # For array shape (nz, ny, nx), np.gradient(relaxed) returns (dV/dz, dV/dy, dV/dx)
-    dVz, dVy, dVx = np.gradient(relaxed, 1.0, 1.0, 1.0)
+# graph potential slices with surfaces overlaid
+levels_p = np.linspace(np.min(relaxed), np.max(relaxed), 21)
+graph_slices(relaxed, potential_surfaces, charged_surfaces,
+                slices=[nz//4, nz//2, 3*nz//4], levels=levels_p, cmap='viridis',axis=0)
 
-    # Electric field E = -grad(V)
-    Ez = -dVz
-    Ey = -dVy
-    Ex = -dVx
+graph_slices(relaxed, potential_surfaces, charged_surfaces,
+                slices=[ny//4, ny//2, 3*ny//4], levels=levels_p, cmap='viridis',axis=1)
 
-    # choose a z slice to visualize (middle)
-    zmid = relaxed.shape[0] // 2
-    ex_slice = Ex[zmid]
-    ey_slice = Ey[zmid]
+# graph Laplacian slices symmetrically about zero
+vmax = np.max(np.abs(lap))
+levels_l = np.linspace(-vmax, vmax, 31) if vmax > 0 else None
+graph_slices(lap, potential_surfaces=None, charged_surfaces=None,
+                slices=[nz//4, nz//2, 3*nz//4], levels=levels_l, cmap='seismic')
 
-    print('Ex/Ey slice shapes:', ex_slice.shape, ey_slice.shape)
-    vector_field_plot(ex_slice, ey_slice,
-                      title='Electric Field Vectors (x-y plane), midplane',
-                      scale_label='Electric Field Magnitude (V/m)',
-                      subsample_step=4)
+# find efield and charge density
+# For array shape (nz, ny, nx), np.gradient(relaxed) returns (dV/dz, dV/dy, dV/dx)
+dVz, dVy, dVx = np.gradient(relaxed, 1.0, 1.0, 1.0)
 
-    # select a mid x-slice (y-z plane) -> axis index 2
-    xmid = relaxed.shape[2] // 2
-    ex_slice = Ey[:, :, xmid]
-    ey_slice = Ez[:, :, xmid]
+# Electric field E = -grad(V)
+Ez = -dVz
+Ey = -dVy
+Ex = -dVx
 
-    print('Ey/Ez (y-z) slice shapes:', ex_slice.shape, ey_slice.shape)
-    vector_field_plot(ex_slice, ey_slice,
-                      title='Electric Field Vectors (y-z plane), midplane',
-                      scale_label='Electric Field Magnitude (V/m)',
-                      subsample_step=4)
+# choose a z slice to visualize (middle)
+zmid = relaxed.shape[0] // 2
+ex_slice = Ex[zmid]
+ey_slice = Ey[zmid]
+
+print('Ex/Ey slice shapes:', ex_slice.shape, ey_slice.shape)
+vector_field_plot(ex_slice, ey_slice,
+                    title='Electric Field Vectors (x-y plane), midplane',
+                    scale_label='Electric Field Magnitude (V/m)',
+                    subsample_step=4)
+
+# select a mid x-slice (y-z plane) -> axis index 2
+xmid = relaxed.shape[2] // 2
+ex_slice = Ey[:, :, xmid]
+ey_slice = Ez[:, :, xmid]
+
+print('Ey/Ez (y-z) slice shapes:', ex_slice.shape, ey_slice.shape)
+vector_field_plot(ex_slice, ey_slice,
+                    title='Electric Field Vectors (y-z plane), midplane',
+                    scale_label='Electric Field Magnitude (V/m)',
+                    subsample_step=4)
