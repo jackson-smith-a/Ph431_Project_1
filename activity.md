@@ -4,4 +4,4 @@ The file [relaxation3d.py](relaxation3d.py) implements the algorithm discussed i
 
 You may utlize the utility functions `graph_slices` and `vector_field_plot` to aide in visualizing these fields.
 
-The solution can be found in [solution.py](solution.py).
+The pieces of the solution can be found in [solution.py](solution.py). The full runnable program is compiled in [solution_complete.py](solution_complete.py).
